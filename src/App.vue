@@ -291,6 +291,7 @@ onUnmounted(() => unsubscribe());
       <template v-else>
         <label>Code d’invitation</label>
         <input v-model="inviteCode" class="code-input" placeholder="MOLLETS" maxlength="8">
+        <p class="reconnect-hint">Déjà membre ? Remets exactement le même pseudo : tu retrouveras ton profil et ton historique.</p>
       </template>
       <button class="confirm-button" :disabled="saving" @click="finishOnboarding">{{ saving ? "Une seconde…" : onboardingMode === "create" ? "Créer notre Pacte" : "Rejoindre la bande" }}</button>
     </section>

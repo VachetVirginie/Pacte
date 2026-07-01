@@ -1,6 +1,7 @@
 import { supabase, supabaseConfigured } from "../lib/supabase";
 
 const DEMO_KEY = "pacte-demo-v2";
+const IDENTITY_KEY = "pacte-last-identity-v1";
 const demoInitial = {
   mode: "demo",
   currentUserId: "vincent",
@@ -47,6 +48,21 @@ function saveDemo(state) {
   return state;
 }
 
+function readIdentity() {
+  try {
+    return JSON.parse(localStorage.getItem(IDENTITY_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function saveIdentity(inviteCode, memberName) {
+  localStorage.setItem(IDENTITY_KEY, JSON.stringify({
+    inviteCode: inviteCode.toUpperCase(),
+    memberName
+  }));
+}
+
 function initials(name) {
   return name.split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase();
 }
@@ -72,7 +88,20 @@ export const pacte = {
   async initialize() {
     if (!supabaseConfigured) return readDemo();
     await ensureSession();
-    return this.load();
+    let state = await this.load();
+    const identity = readIdentity();
+    if (state?.onboarding && identity?.inviteCode && identity?.memberName) {
+      try {
+        await rpc("join_team", {
+          p_invite_code: identity.inviteCode,
+          p_member_name: identity.memberName
+        });
+        state = await this.load();
+      } catch {
+        // L'identité mémorisée peut appartenir à une équipe supprimée.
+      }
+    }
+    return state;
   },
 
   async load() {
@@ -117,7 +146,9 @@ export const pacte = {
       return saveDemo(data);
     }
     await rpc("create_team", { p_team_name: teamName, p_member_name: memberName });
-    return this.load();
+    const state = await this.load();
+    saveIdentity(state.inviteCode, memberName);
+    return state;
   },
 
   async createChallenge(challenge) {
@@ -159,6 +190,7 @@ export const pacte = {
   async joinTeam(inviteCode, memberName) {
     if (!supabaseConfigured) return this.createTeam("Ma nouvelle bande", memberName);
     await rpc("join_team", { p_invite_code: inviteCode.toUpperCase(), p_member_name: memberName });
+    saveIdentity(inviteCode, memberName);
     return this.load();
   },
 
