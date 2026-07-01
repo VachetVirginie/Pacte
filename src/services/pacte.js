@@ -52,10 +52,11 @@ function initials(name) {
 }
 
 async function ensureSession() {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw new Error(`Supabase session : ${sessionError.message}`);
   if (session) return session;
   const { data, error } = await supabase.auth.signInAnonymously();
-  if (error) throw new Error("Activez les connexions anonymes dans Supabase Auth.");
+  if (error) throw new Error(`Connexion anonyme : ${error.message}`);
   return data.session;
 }
 
