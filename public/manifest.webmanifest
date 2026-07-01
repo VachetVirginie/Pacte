@@ -1,0 +1,15 @@
+{
+  "name": "Pacte — Les défis qui rapprochent",
+  "short_name": "Pacte",
+  "description": "Des défis collectifs pour rapprocher les équipes.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f1e8",
+  "theme_color": "#154936",
+  "icons": [{
+    "src": "/icon.svg",
+    "sizes": "any",
+    "type": "image/svg+xml",
+    "purpose": "any maskable"
+  }]
+}

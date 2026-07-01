@@ -1,0 +1,9 @@
+# Variables d'environnement locales
+.env
+.env.local
+.env.*.local
+
+# Dossiers et fichiers générés
+node_modules
+dist
+*.log
