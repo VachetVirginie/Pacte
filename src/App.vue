@@ -29,6 +29,7 @@ const challengeReward = ref("");
 const challengeRewardAt = ref(80);
 const checkinChallengeId = ref(null);
 const bonusTargetOpen = ref(false);
+const updateReady = ref(false);
 const reactionOptions = ["🔥", "👏", "😂", "💪", "❤️", "😮"];
 let unsubscribe = () => {};
 
@@ -44,6 +45,10 @@ const today = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric"
 function notify(message) {
   toast.value = message;
   setTimeout(() => { if (toast.value === message) toast.value = ""; }, 2800);
+}
+
+function reloadPage() {
+  location.reload();
 }
 
 async function load(silent = false) {
@@ -98,6 +103,11 @@ async function createChallenge() {
   } finally {
     saving.value = false;
   }
+}
+
+function cancelChallengeBuilder() {
+  state.value.challengeOnboarding = false;
+  state.value.onboarding = true;
 }
 
 async function refresh() {
@@ -253,7 +263,18 @@ onMounted(async () => {
     onboardingMode.value = "join";
     inviteCode.value = invitedWith.toUpperCase();
   }
-  if ("serviceWorker" in navigator) await navigator.serviceWorker.register("/sw.js");
+  if ("serviceWorker" in navigator) {
+    const registration = await navigator.serviceWorker.register("/sw.js");
+    registration.addEventListener("updatefound", () => {
+      const worker = registration.installing;
+      if (!worker) return;
+      worker.addEventListener("statechange", () => {
+        if (worker.state === "installed" && navigator.serviceWorker.controller) {
+          updateReady.value = true;
+        }
+      });
+    });
+  }
   notificationsEnabled.value = "Notification" in window && Notification.permission === "granted";
   await load();
   if (state.value && !state.value.onboarding) unsubscribe = pacte.subscribe(() => refresh());
@@ -264,6 +285,10 @@ onUnmounted(() => unsubscribe());
 
 <template>
   <main class="app-shell">
+    <div v-if="updateReady" class="update-banner">
+      <span>Nouvelle version disponible</span>
+      <button @click="reloadPage">Mettre à jour</button>
+    </div>
     <header class="topbar">
       <div class="brand"><span class="brand-mark">P</span><span>Pacte</span></div>
       <span v-if="state?.mode === 'demo'" class="demo-pill">MODE DÉMO</span>
@@ -297,6 +322,7 @@ onUnmounted(() => unsubscribe());
     </section>
 
     <section v-else-if="state?.challengeOnboarding" class="onboarding-card challenge-builder">
+      <button class="text-button" @click="cancelChallengeBuilder">← Retour</button>
       <span class="onboarding-emoji">⚡</span>
       <p class="eyebrow">{{ state.teamName?.toUpperCase() }}</p>
       <h1>Quel défi on se lance ?</h1>
@@ -473,6 +499,7 @@ onUnmounted(() => unsubscribe());
       <div class="form-grid"><div><label>{{ challengeTargetMode === "linear" ? "Jour 1" : "Objectif quotidien" }}</label><input v-model.number="challengeTarget" type="number" min="1"></div><div v-if="challengeTargetMode === 'linear'"><label>+ chaque jour</label><input v-model.number="challengeIncrement" type="number" min="0"></div><div><label>Durée</label><select v-model.number="challengeDuration"><option :value="7">7 jours</option><option :value="14">14 jours</option><option :value="30">30 jours</option><option :value="60">60 jours</option></select></div></div>
       <p v-if="challengeTargetMode === 'linear'" class="progression-preview">10, 15, 20… l’objectif évolue automatiquement chaque jour.</p>
       <label>Récompense</label><input v-model="challengeReward" placeholder="Un déjeuner d’équipe">
+      <button type="button" class="text-button" @click="challengeOpen = false">Annuler</button>
       <button type="button" class="confirm-button" :disabled="saving" @click="createChallenge">{{ saving ? "Lancement…" : "Lancer ce challenge" }}</button>
     </div>
   </div>
