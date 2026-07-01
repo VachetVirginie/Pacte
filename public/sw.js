@@ -1,4 +1,4 @@
-const BUILD_VERSION = "2026-07-01T16:48:00.559Z";
+const BUILD_VERSION = "2026-07-01T17:34:20.584Z";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));

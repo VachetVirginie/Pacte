@@ -465,8 +465,15 @@ onUnmounted(() => unsubscribe());
     </template>
 
     <section v-else-if="activeView === 'challenges'" class="page-view">
-      <div class="page-title"><div><p class="eyebrow">LES DÉFIS</p><h1>À nous de jouer</h1></div><div class="page-actions"><button class="text-button" @click="openJoinTeam">Autre équipe</button><button class="round-add" @click="challengeOpen = true">＋</button></div></div>
+      <div class="page-title"><div><p class="eyebrow">LES DÉFIS</p><h1>À nous de jouer</h1></div><div class="page-actions"><button class="text-button" @click="openJoinTeam">Rejoindre une équipe</button><button class="round-add" @click="challengeOpen = true">＋</button></div></div>
       <p class="page-intro">{{ state.challenges?.length || 1 }} challenge{{ (state.challenges?.length || 1) > 1 ? "s" : "" }} en cours — choisis ton terrain de jeu.</p>
+      <div v-if="state.teams?.length > 1" class="teams-list compact">
+        <p class="eyebrow">MES ÉQUIPES</p>
+        <article v-for="team in state.teams" :key="team.id" class="team-row" :class="{ active: team.id === state.teamId }" @click="selectTeam(team)">
+          <div><strong>{{ team.name }}</strong><small>{{ team.memberCount }} membres</small></div>
+          <span v-if="team.id === state.teamId">ACTIF</span>
+        </article>
+      </div>
       <article v-for="challenge in state.challenges || [state.challenge]" :key="challenge.id" class="detail-card active-challenge challenge-list-item">
         <div class="card-status"><span class="live-pill" :class="{ active: challenge.id === state.challenge?.id }"><i></i>{{ challenge.id === state.challenge?.id ? "ACTIF" : "EN COURS" }}</span><strong>{{ challenge.progress }}%</strong></div>
         <p class="eyebrow">{{ challenge.targetMode === "linear" ? `PROGRESSIF · JOUR ${challenge.dayNumber}` : "OBJECTIF FIXE" }}</p>
