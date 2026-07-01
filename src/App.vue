@@ -137,15 +137,23 @@ function openCheckin(challenge = state.value.challenge) {
   checkinOpen.value = true;
 }
 
-function selectChallenge(challenge) {
-  state.value.challenge = challenge;
-  state.value.progress = challenge.progress;
-  const checkedIds = challenge.checkedMemberIds || [];
-  state.value.members = state.value.members.map(member => ({
-    ...member,
-    checkedIn: checkedIds.includes(member.id)
-  }));
-  activeView.value = "home";
+async function selectChallenge(challenge) {
+  saving.value = true;
+  try {
+    state.value.challenge = challenge;
+    state.value.progress = challenge.progress;
+    const checkedIds = challenge.checkedMemberIds || [];
+    state.value.members = state.value.members.map(member => ({
+      ...member,
+      checkedIn: checkedIds.includes(member.id)
+    }));
+    state.value.posts = await pacte.getWallPosts(challenge.id);
+    activeView.value = "home";
+  } catch (err) {
+    notify(err.message);
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function confirmDelete(challenge) {
@@ -201,7 +209,7 @@ async function publishPost() {
   if (!postText.value.trim()) return;
   saving.value = true;
   try {
-    state.value = await pacte.publishPost(postText.value.trim());
+    state.value = await pacte.publishPost(postText.value.trim(), state.value.challenge?.id);
     postText.value = "";
     postOpen.value = false;
     notify("Message publié dans le vestiaire.");

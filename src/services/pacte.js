@@ -136,7 +136,7 @@ export const pacte = {
 
     const [bonusState, wallPosts] = await Promise.all([
       rpc("get_bonus_state"),
-      rpc("get_wall_posts")
+      rpc("get_wall_posts", { p_challenge_id: data.challenge?.id })
     ]);
 
     const challenges = (data.challenges || [data.challenge]).map(challenge => {
@@ -163,6 +163,11 @@ export const pacte = {
   async getTeams() {
     if (!supabaseConfigured) return [];
     return rpc("get_user_teams");
+  },
+
+  async getWallPosts(challengeId) {
+    if (!supabaseConfigured) return readDemo().posts;
+    return rpc("get_wall_posts", { p_challenge_id: challengeId });
   },
 
   async selectTeam(teamId) {
@@ -268,13 +273,13 @@ export const pacte = {
     return this.load();
   },
 
-  async publishPost(body) {
+  async publishPost(body, challengeId) {
     if (!supabaseConfigured) {
       const data = readDemo();
       data.posts.unshift({ id: Date.now(), authorId: data.currentUserId, body, time: "à l'instant", reactions: {} });
       return saveDemo(data);
     }
-    await rpc("add_post", { p_body: body });
+    await rpc("add_post", { p_body: body, p_challenge_id: challengeId });
     return this.load();
   },
 
