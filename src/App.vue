@@ -184,6 +184,19 @@ async function confirmJoinTeam() {
   }
 }
 
+async function selectTeam(team) {
+  saving.value = true;
+  try {
+    state.value = await pacte.selectTeam(team.id);
+    activeView.value = "home";
+    notify(`Équipe ${team.name} sélectionnée.`);
+  } catch (err) {
+    notify(err.message);
+  } finally {
+    saving.value = false;
+  }
+}
+
 async function publishPost() {
   if (!postText.value.trim()) return;
   saving.value = true;
@@ -452,10 +465,10 @@ onUnmounted(() => unsubscribe());
     </template>
 
     <section v-else-if="activeView === 'challenges'" class="page-view">
-      <div class="page-title"><div><p class="eyebrow">LES DÉFIS</p><h1>À nous de jouer</h1></div><div class="page-actions"><button class="text-button" @click="openJoinTeam">Rejoindre</button><button class="round-add" @click="challengeOpen = true">＋</button></div></div>
+      <div class="page-title"><div><p class="eyebrow">LES DÉFIS</p><h1>À nous de jouer</h1></div><div class="page-actions"><button class="text-button" @click="openJoinTeam">Autre équipe</button><button class="round-add" @click="challengeOpen = true">＋</button></div></div>
       <p class="page-intro">{{ state.challenges?.length || 1 }} challenge{{ (state.challenges?.length || 1) > 1 ? "s" : "" }} en cours — choisis ton terrain de jeu.</p>
       <article v-for="challenge in state.challenges || [state.challenge]" :key="challenge.id" class="detail-card active-challenge challenge-list-item">
-        <div class="card-status"><span class="live-pill"><i></i> EN COURS</span><strong>{{ challenge.progress }}%</strong></div>
+        <div class="card-status"><span class="live-pill" :class="{ active: challenge.id === state.challenge?.id }"><i></i>{{ challenge.id === state.challenge?.id ? "ACTIF" : "EN COURS" }}</span><strong>{{ challenge.progress }}%</strong></div>
         <p class="eyebrow">{{ challenge.targetMode === "linear" ? `PROGRESSIF · JOUR ${challenge.dayNumber}` : "OBJECTIF FIXE" }}</p>
         <h2>{{ challenge.title }}</h2>
         <p>{{ challenge.description || "La règle est simple : on s’y tient ensemble." }}</p>
@@ -498,6 +511,13 @@ onUnmounted(() => unsubscribe());
         <button @click="enableNotifications"><span>🔔</span><div><strong>Notifications</strong><small>{{ notificationsEnabled ? "Activées" : "Appuie pour les activer" }}</small></div><b>›</b></button>
         <button @click="shareInvite"><span>🤝</span><div><strong>Inviter un collègue</strong><small>Code {{ state.inviteCode }}</small></div><b>›</b></button>
         <button @click="notify('Pacte est déjà installable depuis le menu du navigateur.')"><span>📲</span><div><strong>Installer l’application</strong><small>Ajouter à l’écran d’accueil</small></div><b>›</b></button>
+      </div>
+      <div v-if="state.teams?.length > 1" class="teams-list">
+        <p class="eyebrow">MES ÉQUIPES</p>
+        <article v-for="team in state.teams" :key="team.id" class="team-row" :class="{ active: team.id === state.teamId }" @click="selectTeam(team)">
+          <div><strong>{{ team.name }}</strong><small>{{ team.memberCount }} membres · code {{ team.inviteCode }}</small></div>
+          <span v-if="team.id === state.teamId">ACTIF</span>
+        </article>
       </div>
       <p class="privacy-note">Pacte ne mesure pas tes mouvements et ne transmet aucune donnée à ton employeur. La confiance fait partie du défi.</p>
     </section>

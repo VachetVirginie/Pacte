@@ -2,9 +2,11 @@ import { supabase, supabaseConfigured } from "../lib/supabase";
 
 const DEMO_KEY = "pacte-demo-v2";
 const IDENTITY_KEY = "pacte-last-identity-v1";
+const ACTIVE_TEAM_KEY = "pacte-active-team-v1";
 const demoInitial = {
   mode: "demo",
   currentUserId: "vincent",
+  teamId: "team-mollets",
   inviteCode: "MOLLETS",
   challenge: {
     id: "squats-juillet",
@@ -15,6 +17,9 @@ const demoInitial = {
     reward: "Café-croissants",
     rewardAt: 80
   },
+  teams: [
+    { id: "team-mollets", name: "L'équipe des mollets", inviteCode: "MOLLETS", memberCount: 5 }
+  ],
   members: [
     { id: "amelie", name: "Amélie", initials: "AM", checkedIn: true, color: "coral" },
     { id: "julien", name: "Julien", initials: "JL", checkedIn: true, color: "blue" },
@@ -46,6 +51,21 @@ function readDemo() {
 function saveDemo(state) {
   localStorage.setItem(DEMO_KEY, JSON.stringify(state));
   return state;
+}
+
+function readActiveTeam() {
+  try {
+    return localStorage.getItem(ACTIVE_TEAM_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveActiveTeam(teamId) {
+  try {
+    if (teamId) localStorage.setItem(ACTIVE_TEAM_KEY, teamId);
+    else localStorage.removeItem(ACTIVE_TEAM_KEY);
+  } catch {}
 }
 
 function readIdentity() {
@@ -104,11 +124,15 @@ export const pacte = {
     return state;
   },
 
-  async load() {
+  async load(teamId) {
     if (!supabaseConfigured) return readDemo();
-    const data = await rpc("get_app_state");
-    if (data?.onboarding) return { onboarding: true, mode: "live" };
-    if (data?.challengeOnboarding) return data;
+    const activeId = teamId || readActiveTeam();
+    const [data, teams] = await Promise.all([
+      rpc("get_app_state", activeId ? { p_team_id: activeId } : {}),
+      rpc("get_user_teams")
+    ]);
+    if (data?.onboarding) return { ...data, teams: teams || [], mode: "live" };
+    if (data?.challengeOnboarding) return { ...data, teams: teams || [] };
 
     const [bonusState, wallPosts] = await Promise.all([
       rpc("get_bonus_state"),
@@ -127,12 +151,23 @@ export const pacte = {
 
     return {
       ...data,
+      teams: teams || [],
       challenges,
       challenge: challenges[0],
       posts: wallPosts,
       ownedCards: bonusState.ownedCards || [],
       receivedCards: bonusState.receivedCards || []
     };
+  },
+
+  async getTeams() {
+    if (!supabaseConfigured) return [];
+    return rpc("get_user_teams");
+  },
+
+  async selectTeam(teamId) {
+    saveActiveTeam(teamId);
+    return this.load(teamId);
   },
 
   async createTeam(teamName, memberName) {
@@ -145,8 +180,9 @@ export const pacte = {
       me.initials = initials(memberName);
       return saveDemo(data);
     }
-    await rpc("create_team", { p_team_name: teamName, p_member_name: memberName });
-    const state = await this.load();
+    const teamId = await rpc("create_team", { p_team_name: teamName, p_member_name: memberName });
+    saveActiveTeam(teamId);
+    const state = await this.load(teamId);
     saveIdentity(state.inviteCode, memberName);
     return state;
   },
@@ -207,9 +243,10 @@ export const pacte = {
 
   async joinTeam(inviteCode, memberName) {
     if (!supabaseConfigured) return this.createTeam("Ma nouvelle bande", memberName);
-    await rpc("join_team", { p_invite_code: inviteCode.toUpperCase(), p_member_name: memberName });
+    const teamId = await rpc("join_team", { p_invite_code: inviteCode.toUpperCase(), p_member_name: memberName });
+    saveActiveTeam(teamId);
     saveIdentity(inviteCode, memberName);
-    return this.load();
+    return this.load(teamId);
   },
 
   async checkin(challengeId, note, mood) {
