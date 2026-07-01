@@ -1,0 +1,7 @@
+project_id = "pacte"
+
+[auth]
+enable_anonymous_sign_ins = true
+
+[functions.send-web-push]
+verify_jwt = false
