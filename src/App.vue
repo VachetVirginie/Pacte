@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { pacte } from "./services/pacte";
 
 const state = ref(null);
@@ -34,6 +34,11 @@ const joinTeamCode = ref("");
 const joinTeamName = ref("");
 const updateReady = ref(false);
 const reactionOptions = ["🔥", "👏", "😂", "💪", "❤️", "😮"];
+const checkinModalRef = ref(null);
+const postModalRef = ref(null);
+const challengeModalRef = ref(null);
+const joinTeamModalRef = ref(null);
+const bonusModalRef = ref(null);
 let unsubscribe = () => {};
 
 const doneCount = computed(() => state.value?.challenge?.doneCount ?? state.value?.members?.filter(member => member.checkedIn).length ?? 0);
@@ -317,6 +322,58 @@ function memberFor(post) {
     { name: "La bande", initials: "PB", color: "green" };
 }
 
+function focusFirst(el) {
+  if (!el) return;
+  const focusable = el.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  if (focusable) focusable.focus();
+  else el.focus();
+}
+
+function useModalFocus(openRef, modalRef) {
+  watch(openRef, async (open) => {
+    if (open) {
+      await nextTick();
+      focusFirst(modalRef.value);
+    }
+  });
+}
+
+function getOpenModal() {
+  if (checkinOpen.value) return checkinModalRef.value;
+  if (postOpen.value) return postModalRef.value;
+  if (challengeOpen.value) return challengeModalRef.value;
+  if (joinTeamOpen.value) return joinTeamModalRef.value;
+  if (activeBonus.value) return bonusModalRef.value;
+  return null;
+}
+
+function trapFocus(e) {
+  if (e.key !== "Tab") return;
+  const modal = getOpenModal();
+  if (!modal) return;
+  const focusable = Array.from(modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'));
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+function onKeydown(e) {
+  if (e.key === "Escape") {
+    if (checkinOpen.value) { checkinOpen.value = false; return; }
+    if (postOpen.value) { postOpen.value = false; return; }
+    if (challengeOpen.value) { challengeOpen.value = false; return; }
+    if (joinTeamOpen.value) { joinTeamOpen.value = false; return; }
+  }
+  trapFocus(e);
+}
+
 onMounted(async () => {
   const invitedWith = new URLSearchParams(window.location.search).get("invite");
   if (invitedWith) {
@@ -336,46 +393,61 @@ onMounted(async () => {
     });
   }
   notificationsEnabled.value = "Notification" in window && Notification.permission === "granted";
+  useModalFocus(checkinOpen, checkinModalRef);
+  useModalFocus(postOpen, postModalRef);
+  useModalFocus(challengeOpen, challengeModalRef);
+  useModalFocus(joinTeamOpen, joinTeamModalRef);
+  watch(() => activeBonus.value, async (bonus) => {
+    if (bonus) {
+      await nextTick();
+      focusFirst(bonusModalRef.value);
+    }
+  });
+  window.addEventListener("keydown", onKeydown);
   await load();
   if (state.value && !state.value.onboarding) unsubscribe = pacte.subscribe(() => refresh());
 });
 
-onUnmounted(() => unsubscribe());
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKeydown);
+  unsubscribe();
+});
 </script>
 
 <template>
-  <main class="app-shell">
-    <div v-if="updateReady" class="update-banner">
+  <a href="#main" class="skip-link">Aller au contenu principal</a>
+  <main id="main" class="app-shell">
+    <div v-if="updateReady" class="update-banner" role="status">
       <span>Nouvelle version disponible</span>
       <button @click="reloadPage">Mettre à jour</button>
     </div>
     <header class="topbar">
       <div class="brand"><span class="brand-mark">P</span><span>Pacte</span></div>
       <span v-if="state?.mode === 'demo'" class="demo-pill">MODE DÉMO</span>
-      <button v-else-if="currentMember" class="avatar-button">{{ currentMember.initials }}</button>
+      <button v-else-if="currentMember" class="avatar-button" aria-label="Mon profil">{{ currentMember.initials }}</button>
     </header>
 
     <div v-if="loading" class="state-screen">La bande arrive…</div>
     <div v-else-if="error" class="state-screen error-state"><strong>Petit pépin technique</strong><p>{{ error }}</p><button class="confirm-button" @click="load()">Réessayer</button></div>
 
     <section v-else-if="state?.onboarding" class="onboarding-card">
-      <span class="onboarding-emoji">🤝</span>
+      <span class="onboarding-emoji" aria-hidden="true">🤝</span>
       <p class="eyebrow">BIENVENUE DANS PACTE</p>
       <h1>On monte une bande ?</h1>
       <p>Crée ton équipe ou rejoins tes collègues avec leur code d’invitation.</p>
-      <div class="onboarding-tabs">
-        <button :class="{ active: onboardingMode === 'create' }" @click="onboardingMode = 'create'">Créer une équipe</button>
-        <button :class="{ active: onboardingMode === 'join' }" @click="onboardingMode = 'join'">J’ai un code</button>
+      <div class="onboarding-tabs" role="tablist">
+        <button :class="{ active: onboardingMode === 'create' }" @click="onboardingMode = 'create'" role="tab" :aria-selected="onboardingMode === 'create'">Créer une équipe</button>
+        <button :class="{ active: onboardingMode === 'join' }" @click="onboardingMode = 'join'" role="tab" :aria-selected="onboardingMode === 'join'">J’ai un code</button>
       </div>
-      <label>Ton prénom</label>
-      <input v-model="memberName" placeholder="Camille" maxlength="40">
+      <label for="memberName">Ton prénom</label>
+      <input id="memberName" v-model="memberName" placeholder="Camille" maxlength="40">
       <template v-if="onboardingMode === 'create'">
-        <label>Nom de l’équipe</label>
-        <input v-model="teamName" placeholder="Les mollets vaillants" maxlength="60">
+        <label for="teamName">Nom de l’équipe</label>
+        <input id="teamName" v-model="teamName" placeholder="Les mollets vaillants" maxlength="60">
       </template>
       <template v-else>
-        <label>Code d’invitation</label>
-        <input v-model="inviteCode" class="code-input" placeholder="MOLLETS" maxlength="8">
+        <label for="inviteCode">Code d’invitation</label>
+        <input id="inviteCode" v-model="inviteCode" class="code-input" placeholder="MOLLETS" maxlength="8">
         <p class="reconnect-hint">Déjà membre ? Remets exactement le même pseudo : tu retrouveras ton profil et ton historique.</p>
       </template>
       <button class="confirm-button" :disabled="saving" @click="finishOnboarding">{{ saving ? "Une seconde…" : onboardingMode === "create" ? "Créer notre Pacte" : "Rejoindre la bande" }}</button>
@@ -383,7 +455,7 @@ onUnmounted(() => unsubscribe());
 
     <section v-else-if="state?.challengeOnboarding" class="onboarding-card challenge-builder">
       <button class="text-button" @click="cancelChallengeBuilder">← Retour</button>
-      <span class="onboarding-emoji">⚡</span>
+      <span class="onboarding-emoji" aria-hidden="true">⚡</span>
       <p class="eyebrow">{{ state.teamName?.toUpperCase() }}</p>
       <h1>Quel défi on se lance ?</h1>
       <p>Le nom de l’équipe, c’était l’échauffement. Maintenant, définis les règles du jeu.</p>
@@ -391,48 +463,48 @@ onUnmounted(() => unsubscribe());
         <div><span>CODE D’ÉQUIPE</span><strong>{{ state.inviteCode }}</strong></div>
         <button @click="shareInvite">Inviter quelqu’un</button>
       </div>
-      <label>Nom du challenge</label>
-      <input v-model="challengeTitle" placeholder="30 squats par jour" maxlength="80">
-      <label>Description <span>facultatif</span></label>
-      <textarea v-model="challengeDescription" rows="3" placeholder="Un mois pour devenir la terreur des escaliers…"></textarea>
+      <label for="challengeTitle">Nom du challenge</label>
+      <input id="challengeTitle" v-model="challengeTitle" placeholder="30 squats par jour" maxlength="80">
+      <label for="challengeDescription">Description <span>facultatif</span></label>
+      <textarea id="challengeDescription" v-model="challengeDescription" rows="3" placeholder="Un mois pour devenir la terreur des escaliers…"></textarea>
       <label>Évolution de l’objectif</label>
-      <div class="progression-toggle">
-        <button :class="{ active: challengeTargetMode === 'fixed' }" @click="challengeTargetMode = 'fixed'">Objectif fixe</button>
-        <button :class="{ active: challengeTargetMode === 'linear' }" @click="challengeTargetMode = 'linear'">Progressif</button>
+      <div class="progression-toggle" role="group" aria-label="Type d’objectif">
+        <button :class="{ active: challengeTargetMode === 'fixed' }" @click="challengeTargetMode = 'fixed'" :aria-pressed="challengeTargetMode === 'fixed'">Objectif fixe</button>
+        <button :class="{ active: challengeTargetMode === 'linear' }" @click="challengeTargetMode = 'linear'" :aria-pressed="challengeTargetMode === 'linear'">Progressif</button>
       </div>
       <div class="form-grid">
-        <div><label>{{ challengeTargetMode === "linear" ? "Objectif jour 1" : "Objectif quotidien" }}</label><input v-model.number="challengeTarget" type="number" min="1" max="10000"></div>
-        <div v-if="challengeTargetMode === 'linear'"><label>+ chaque jour</label><input v-model.number="challengeIncrement" type="number" min="0" max="10000"></div>
-        <div><label>Durée</label><select v-model.number="challengeDuration"><option :value="7">7 jours</option><option :value="14">14 jours</option><option :value="21">21 jours</option><option :value="30">30 jours</option><option :value="60">60 jours</option></select></div>
+        <div><label for="challengeTarget">{{ challengeTargetMode === "linear" ? "Objectif jour 1" : "Objectif quotidien" }}</label><input id="challengeTarget" v-model.number="challengeTarget" type="number" min="1" max="10000"></div>
+        <div v-if="challengeTargetMode === 'linear'"><label for="challengeIncrement">+ chaque jour</label><input id="challengeIncrement" v-model.number="challengeIncrement" type="number" min="0" max="10000"></div>
+        <div><label for="challengeDuration">Durée</label><select id="challengeDuration" v-model.number="challengeDuration"><option :value="7">7 jours</option><option :value="14">14 jours</option><option :value="21">21 jours</option><option :value="30">30 jours</option><option :value="60">60 jours</option></select></div>
       </div>
       <p v-if="challengeTargetMode === 'linear'" class="progression-preview">Jour 1 : <b>{{ challengeTarget }}</b> · Jour 2 : <b>{{ Number(challengeTarget) + Number(challengeIncrement) }}</b> · Jour 3 : <b>{{ Number(challengeTarget) + Number(challengeIncrement) * 2 }}</b></p>
-      <label>Récompense collective <span>facultatif</span></label>
-      <input v-model="challengeReward" placeholder="Café-croissants, déjeuner d’équipe…" maxlength="80">
-      <label>Palier de déblocage</label>
-      <div class="range-row"><input v-model.number="challengeRewardAt" type="range" min="50" max="100" step="5"><strong>{{ challengeRewardAt }}%</strong></div>
+      <label for="challengeReward">Récompense collective <span>facultatif</span></label>
+      <input id="challengeReward" v-model="challengeReward" placeholder="Café-croissants, déjeuner d’équipe…" maxlength="80">
+      <label for="challengeRewardAt">Palier de déblocage</label>
+      <div class="range-row"><input id="challengeRewardAt" v-model.number="challengeRewardAt" type="range" min="50" max="100" step="5"><strong>{{ challengeRewardAt }}%</strong></div>
       <button class="confirm-button" :disabled="saving" @click="createChallenge">{{ saving ? "Lancement…" : "Lancer le challenge" }}</button>
     </section>
 
     <template v-else-if="activeView === 'home'">
       <section class="greeting">
-        <div><p class="eyebrow">{{ today }}</p><h1>Salut {{ currentMember.name }} <span>👋</span></h1></div>
+        <div><p class="eyebrow">{{ today }}</p><h1>Salut {{ currentMember.name }} <span aria-hidden="true">👋</span></h1></div>
         <button class="icon-button" @click="enableNotifications" :aria-label="notificationsEnabled ? 'Notifications activées' : 'Activer les notifications'">
-          {{ notificationsEnabled ? "🔔" : "🔕" }}<i v-if="!notificationsEnabled"></i>
+          <span aria-hidden="true">{{ notificationsEnabled ? "🔔" : "🔕" }}</span><i v-if="!notificationsEnabled" aria-hidden="true"></i>
         </button>
       </section>
 
       <section class="challenge-card">
-        <div class="challenge-topline"><span class="live-pill"><i></i> EN COURS</span><button class="more-button" aria-label="Créer un nouveau challenge" @click="challengeOpen = true">＋</button></div>
+        <div class="challenge-topline"><span class="live-pill"><i aria-hidden="true"></i> EN COURS</span><button class="more-button" aria-label="Créer un nouveau challenge" @click="challengeOpen = true"><span aria-hidden="true">＋</span></button></div>
         <p class="challenge-kicker">{{ state.challenge.team.toUpperCase() }}</p>
         <h2>{{ state.challenge.title }}</h2>
         <p class="challenge-copy">{{ state.challenge.description }}</p>
         <p v-if="state.challenge.targetMode === 'linear'" class="day-target">Jour {{ state.challenge.dayNumber }} · objectif du jour : <b>{{ state.challenge.todayTarget }}</b></p>
-        <p v-if="state.challenge.activeEffects?.length" class="bonus-effect-pill">{{ state.challenge.activeEffects[0].emoji }} {{ state.challenge.activeEffects[0].title }} actif · objectif initial {{ state.challenge.baseTodayTarget }}</p>
+        <p v-if="state.challenge.activeEffects?.length" class="bonus-effect-pill"><span aria-hidden="true">{{ state.challenge.activeEffects[0].emoji }}</span> {{ state.challenge.activeEffects[0].title }} actif · objectif initial {{ state.challenge.baseTodayTarget }}</p>
         <div class="progress-head"><span>Progression collective</span><strong>{{ state.progress }}%</strong></div>
-        <div class="progress-track"><div class="progress-fill" :style="{ width: `${state.progress}%` }"></div></div>
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="state.progress" aria-label="Progression collective"><div class="progress-fill" :style="{ width: `${state.progress}%` }"></div></div>
         <div class="challenge-meta"><span><b>{{ state.members.length }}</b> courageux</span><button class="invite-chip" @click="shareInvite">Inviter · {{ state.inviteCode }}</button></div>
         <div class="today-panel" :class="{ completed: state.challenge.checkedIn }">
-          <div class="today-copy"><span class="today-icon">✓</span><div><p>Aujourd'hui · objectif {{ state.challenge.todayTarget || state.challenge.dailyTarget }}</p><strong>{{ state.challenge.checkedIn ? "Mission accomplie. La bande valide." : "Prêt à relever le défi ?" }}</strong></div></div>
+          <div class="today-copy"><span class="today-icon" aria-hidden="true">✓</span><div><p>Aujourd'hui · objectif {{ state.challenge.todayTarget || state.challenge.dailyTarget }}</p><strong>{{ state.challenge.checkedIn ? "Mission accomplie. La bande valide." : "Prêt à relever le défi ?" }}</strong></div></div>
           <button class="checkin-button" @click="openCheckin(state.challenge)">
             {{ state.challenge.checkedIn ? "Validé ✓" : "C'est fait !" }} <b v-if="!state.challenge.checkedIn">+{{ state.challenge.todayTarget || state.challenge.dailyTarget }}</b>
           </button>
@@ -442,48 +514,48 @@ onUnmounted(() => unsubscribe());
       <section class="squad-section">
         <div class="section-heading"><div><p class="eyebrow">LA BANDE</p><h3>{{ doneCount }} sur {{ state.members.length }} aujourd'hui</h3></div><span class="collective-badge">Presque !</span></div>
         <div class="squad">
-          <button v-for="member in state.members" :key="member.id" class="member" @click="!member.checkedIn && member.id !== state.currentUserId && nudge(member)">
-            <div class="avatar" :class="member.color">{{ member.initials }}<span>{{ member.checkedIn ? "✓" : "!" }}</span></div><p>{{ member.name }}</p>
+          <button v-for="member in state.members" :key="member.id" class="member" @click="!member.checkedIn && member.id !== state.currentUserId && nudge(member)" :aria-label="!member.checkedIn && member.id !== state.currentUserId ? `Relancer ${member.name}` : member.name">
+            <div class="avatar" :class="member.color" aria-hidden="true">{{ member.initials }}<span>{{ member.checkedIn ? "✓" : "!" }}</span></div><p>{{ member.name }}</p>
           </button>
         </div>
         <p class="nudge-copy">Touchez un retardataire pour lui envoyer un petit coup de coude.</p>
       </section>
 
-      <section class="feed-section">
-        <div class="section-heading feed-heading"><div><p class="eyebrow">LE VESTIAIRE</p><h3>Ça papote</h3></div><button class="text-button">Tout voir</button></div>
+      <section class="feed-section" aria-label="Vestiaire, messages de la bande">
+        <div class="section-heading feed-heading"><div><p class="eyebrow">LE VESTIAIRE</p><h3>Ça papote</h3></div></div>
         <article v-for="post in state.posts" :key="post.id" class="post">
-          <div class="post-avatar" :class="memberFor(post).color">{{ memberFor(post).initials }}</div>
+          <div class="post-avatar" :class="memberFor(post).color" aria-hidden="true">{{ memberFor(post).initials }}</div>
           <div class="post-content">
             <div class="post-meta"><strong>{{ memberFor(post).name }}</strong><span>{{ post.time }}</span></div>
             <p>{{ post.body }}</p>
             <div class="post-actions">
-              <button v-for="emoji in reactionOptions" :key="emoji" class="reaction" :class="{ active: post.reactionPeople?.[emoji]?.includes(currentMember.name) }" @click="react(post, emoji)">{{ emoji }} <span v-if="post.reactions?.[emoji]">{{ post.reactions[emoji] }}</span></button>
+              <button v-for="emoji in reactionOptions" :key="emoji" class="reaction" :class="{ active: post.reactionPeople?.[emoji]?.includes(currentMember.name) }" @click="react(post, emoji)" :aria-label="`Réagir avec ${emoji}`" :aria-pressed="!!post.reactionPeople?.[emoji]?.includes(currentMember.name)"><span aria-hidden="true">{{ emoji }}</span> <span v-if="post.reactions?.[emoji]">{{ post.reactions[emoji] }}</span></button>
             </div>
             <div v-if="Object.keys(post.reactionPeople || {}).length" class="reaction-people">
-              <span v-for="(people, emoji) in post.reactionPeople" :key="emoji">{{ emoji }} {{ people.join(", ") }}</span>
+              <span v-for="(people, emoji) in post.reactionPeople" :key="emoji"><span aria-hidden="true">{{ emoji }}</span> {{ people.join(", ") }}</span>
             </div>
           </div>
         </article>
-        <button class="new-post-button" @click="postOpen = true"><span>+</span> Partager un exploit, une plainte…</button>
+        <button class="new-post-button" @click="postOpen = true"><span aria-hidden="true">+</span> Partager un exploit, une plainte…</button>
       </section>
 
       <section class="reward-card">
-        <div class="reward-icon">☕</div><div><p class="eyebrow">PROCHAIN PALIER</p><h3>{{ state.challenge.reward }} débloqué à {{ state.challenge.rewardAt }}%</h3><p>Encore un petit effort collectif.</p></div><strong>{{ state.progress }}%</strong>
+        <div class="reward-icon" aria-hidden="true">☕</div><div><p class="eyebrow">PROCHAIN PALIER</p><h3>{{ state.challenge.reward }} débloqué à {{ state.challenge.rewardAt }}%</h3><p>Encore un petit effort collectif.</p></div><strong>{{ state.progress }}%</strong>
       </section>
     </template>
 
     <section v-else-if="activeView === 'challenges'" class="page-view">
-      <div class="page-title"><div><p class="eyebrow">LES DÉFIS</p><h1>À nous de jouer</h1></div><div class="page-actions"><button class="text-button" @click="openJoinTeam">Rejoindre une équipe</button><button class="round-add" @click="challengeOpen = true">＋</button></div></div>
+      <div class="page-title"><div><p class="eyebrow">LES DÉFIS</p><h1>À nous de jouer</h1></div><div class="page-actions"><button class="text-button" @click="openJoinTeam">Rejoindre une équipe</button><button class="round-add" aria-label="Créer un nouveau challenge" @click="challengeOpen = true"><span aria-hidden="true">＋</span></button></div></div>
       <p class="page-intro">{{ state.challenges?.length || 1 }} challenge{{ (state.challenges?.length || 1) > 1 ? "s" : "" }} en cours — choisis ton terrain de jeu.</p>
       <div v-if="state.teams?.length > 1" class="teams-list compact">
         <p class="eyebrow">MES ÉQUIPES</p>
-        <article v-for="team in state.teams" :key="team.id" class="team-row" :class="{ active: team.id === state.teamId }" @click="selectTeam(team)">
+        <button v-for="team in state.teams" :key="team.id" class="team-row" :class="{ active: team.id === state.teamId }" @click="selectTeam(team)" :aria-current="team.id === state.teamId ? 'true' : undefined">
           <div><strong>{{ team.name }}</strong><small>{{ team.memberCount }} membres</small></div>
           <span v-if="team.id === state.teamId">ACTIF</span>
-        </article>
+        </button>
       </div>
       <article v-for="challenge in state.challenges || [state.challenge]" :key="challenge.id" class="detail-card active-challenge challenge-list-item">
-        <div class="card-status"><span class="live-pill" :class="{ active: challenge.id === state.challenge?.id }"><i></i>{{ challenge.id === state.challenge?.id ? "ACTIF" : "EN COURS" }}</span><strong>{{ challenge.progress }}%</strong></div>
+        <div class="card-status"><span class="live-pill" :class="{ active: challenge.id === state.challenge?.id }"><i aria-hidden="true"></i>{{ challenge.id === state.challenge?.id ? "ACTIF" : "EN COURS" }}</span><strong>{{ challenge.progress }}%</strong></div>
         <p class="eyebrow">{{ challenge.targetMode === "linear" ? `PROGRESSIF · JOUR ${challenge.dayNumber}` : "OBJECTIF FIXE" }}</p>
         <h2>{{ challenge.title }}</h2>
         <p>{{ challenge.description || "La règle est simple : on s’y tient ensemble." }}</p>
@@ -507,9 +579,9 @@ onUnmounted(() => unsubscribe());
       </div>
       <div class="member-list">
         <article v-for="member in state.members" :key="member.id" class="member-row">
-          <div class="avatar" :class="member.color">{{ member.initials }}<span>{{ member.checkedIn ? "✓" : "!" }}</span></div>
+          <div class="avatar" :class="member.color" aria-hidden="true">{{ member.initials }}<span>{{ member.checkedIn ? "✓" : "!" }}</span></div>
           <div><strong>{{ member.name }}</strong><p>{{ member.id === state.currentUserId ? "C’est toi" : member.checkedIn ? "Défi validé aujourd’hui" : "Pas encore passé·e à l’action" }}</p></div>
-          <button v-if="!member.checkedIn && member.id !== state.currentUserId" @click="nudge(member)">👀 Relancer</button>
+          <button v-if="!member.checkedIn && member.id !== state.currentUserId" @click="nudge(member)"><span aria-hidden="true">👀</span> Relancer</button>
         </article>
       </div>
     </section>
@@ -517,97 +589,97 @@ onUnmounted(() => unsubscribe());
     <section v-else-if="activeView === 'profile'" class="page-view">
       <div class="page-title"><div><p class="eyebrow">MON PROFIL</p><h1>Ton coin à toi</h1></div></div>
       <div class="profile-card">
-        <div class="profile-avatar" :class="currentMember.color">{{ currentMember.initials }}</div>
+        <div class="profile-avatar" :class="currentMember.color" aria-hidden="true">{{ currentMember.initials }}</div>
         <h2>{{ currentMember.name }}</h2>
         <p>{{ state.challenge.team }}</p>
         <span>{{ state.challenges?.filter(item => item.checkedIn).length || 0 }}/{{ state.challenges?.length || 1 }} challenges validés aujourd’hui</span>
       </div>
       <div class="settings-list">
-        <button @click="enableNotifications"><span>🔔</span><div><strong>Notifications</strong><small>{{ notificationsEnabled ? "Activées" : "Appuie pour les activer" }}</small></div><b>›</b></button>
-        <button @click="shareInvite"><span>🤝</span><div><strong>Inviter un collègue</strong><small>Code {{ state.inviteCode }}</small></div><b>›</b></button>
-        <button @click="notify('Pacte est déjà installable depuis le menu du navigateur.')"><span>📲</span><div><strong>Installer l’application</strong><small>Ajouter à l’écran d’accueil</small></div><b>›</b></button>
+        <button @click="enableNotifications"><span aria-hidden="true">🔔</span><div><strong>Notifications</strong><small>{{ notificationsEnabled ? "Activées" : "Appuie pour les activer" }}</small></div><b aria-hidden="true">›</b></button>
+        <button @click="shareInvite"><span aria-hidden="true">🤝</span><div><strong>Inviter un collègue</strong><small>Code {{ state.inviteCode }}</small></div><b aria-hidden="true">›</b></button>
+        <button @click="notify('Pacte est déjà installable depuis le menu du navigateur.')"><span aria-hidden="true">📲</span><div><strong>Installer l’application</strong><small>Ajouter à l’écran d’accueil</small></div><b aria-hidden="true">›</b></button>
       </div>
       <div v-if="state.teams?.length > 1" class="teams-list">
         <p class="eyebrow">MES ÉQUIPES</p>
-        <article v-for="team in state.teams" :key="team.id" class="team-row" :class="{ active: team.id === state.teamId }" @click="selectTeam(team)">
+        <button v-for="team in state.teams" :key="team.id" class="team-row" :class="{ active: team.id === state.teamId }" @click="selectTeam(team)" :aria-current="team.id === state.teamId ? 'true' : undefined">
           <div><strong>{{ team.name }}</strong><small>{{ team.memberCount }} membres · code {{ team.inviteCode }}</small></div>
           <span v-if="team.id === state.teamId">ACTIF</span>
-        </article>
+        </button>
       </div>
       <p class="privacy-note">Pacte ne mesure pas tes mouvements et ne transmet aucune donnée à ton employeur. La confiance fait partie du défi.</p>
     </section>
 
-    <nav v-if="state && !state.onboarding && !state.challengeOnboarding" class="bottom-nav">
-      <button class="nav-item" :class="{ active: activeView === 'home' }" @click="activeView = 'home'"><span>⌂</span>Accueil</button><button class="nav-item" :class="{ active: activeView === 'challenges' }" @click="activeView = 'challenges'"><span>⚡</span>Défis</button>
-      <button class="central-action" @click="openCheckin(state.challenge)">✓</button>
-      <button class="nav-item" :class="{ active: activeView === 'squad' }" @click="activeView = 'squad'"><span>♟</span>La bande</button><button class="nav-item" :class="{ active: activeView === 'profile' }" @click="activeView = 'profile'"><span>☺</span>Profil</button>
+    <nav v-if="state && !state.onboarding && !state.challengeOnboarding" class="bottom-nav" aria-label="Navigation principale">
+      <button class="nav-item" :class="{ active: activeView === 'home' }" @click="activeView = 'home'" :aria-current="activeView === 'home' ? 'page' : undefined"><span aria-hidden="true">⌂</span>Accueil</button><button class="nav-item" :class="{ active: activeView === 'challenges' }" @click="activeView = 'challenges'" :aria-current="activeView === 'challenges' ? 'page' : undefined"><span aria-hidden="true">⚡</span>Défis</button>
+      <button class="central-action" aria-label="Valider mon défi du jour" @click="openCheckin(state.challenge)"><span aria-hidden="true">✓</span></button>
+      <button class="nav-item" :class="{ active: activeView === 'squad' }" @click="activeView = 'squad'" :aria-current="activeView === 'squad' ? 'page' : undefined"><span aria-hidden="true">♟</span>La bande</button><button class="nav-item" :class="{ active: activeView === 'profile' }" @click="activeView = 'profile'" :aria-current="activeView === 'profile' ? 'page' : undefined"><span aria-hidden="true">☺</span>Profil</button>
     </nav>
   </main>
 
-  <Transition name="toast"><div v-if="toast" class="toast">{{ toast }}</div></Transition>
+  <Transition name="toast"><div v-if="toast" class="toast" role="status" aria-live="polite">{{ toast }}</div></Transition>
 
-  <div v-if="checkinOpen" class="modal-backdrop" @click.self="checkinOpen = false">
+  <div v-if="checkinOpen" class="modal-backdrop" @click.self="checkinOpen = false" role="dialog" aria-modal="true" aria-labelledby="checkinTitle" ref="checkinModalRef">
     <div class="dialog-card">
-      <button type="button" class="dialog-close" @click="checkinOpen = false">×</button><div class="celebration">🔥</div>
-      <p class="eyebrow">{{ checkinChallenge?.title }}</p><h2>Objectif : {{ checkinChallenge?.todayTarget || checkinChallenge?.dailyTarget }}</h2><p>Une journée de plus tenue ensemble. L’équipe est fière de toi.</p>
-      <label>Un mot pour la bande ? <span>facultatif</span></label><textarea v-model="note" rows="3" placeholder="Facile. Enfin presque."></textarea>
-      <div class="quick-reactions"><button v-for="item in [['😎','Facile'],['🥵','Ça pique'],['💀','Adieu']]" :key="item[0]" type="button" class="mood" :class="{ selected: mood === item[0] }" @click="mood = item[0]">{{ item[0] }} {{ item[1] }}</button></div>
+      <button type="button" class="dialog-close" aria-label="Fermer" @click="checkinOpen = false">×</button><div class="celebration" aria-hidden="true">🔥</div>
+      <p class="eyebrow">{{ checkinChallenge?.title }}</p><h2 id="checkinTitle">Objectif : {{ checkinChallenge?.todayTarget || checkinChallenge?.dailyTarget }}</h2><p>Une journée de plus tenue ensemble. L’équipe est fière de toi.</p>
+      <label for="checkinNote">Un mot pour la bande ? <span>facultatif</span></label><textarea id="checkinNote" v-model="note" rows="3" placeholder="Facile. Enfin presque."></textarea>
+      <div class="quick-reactions" role="group" aria-label="Humeur"><button v-for="item in [['😎','Facile'],['🥵','Ça pique'],['💀','Adieu']]" :key="item[0]" type="button" class="mood" :class="{ selected: mood === item[0] }" @click="mood = item[0]" :aria-pressed="mood === item[0]" :aria-label="`Humeur : ${item[1]}`"><span aria-hidden="true">{{ item[0] }}</span> {{ item[1] }}</button></div>
       <button type="button" class="confirm-button" :disabled="saving" @click="checkin">{{ saving ? "Envoi…" : "Valider et fanfaronner" }}</button>
     </div>
   </div>
 
-  <div v-if="postOpen" class="modal-backdrop" @click.self="postOpen = false">
+  <div v-if="postOpen" class="modal-backdrop" @click.self="postOpen = false" role="dialog" aria-modal="true" aria-labelledby="postTitle" ref="postModalRef">
     <div class="dialog-card">
-      <button type="button" class="dialog-close" @click="postOpen = false">×</button><p class="eyebrow">LE VESTIAIRE</p><h2>Raconte-nous tout</h2>
-      <textarea v-model="postText" rows="5" placeholder="Un exploit, une excuse créative…"></textarea><button type="button" class="confirm-button" :disabled="saving" @click="publishPost">{{ saving ? "Publication…" : "Publier" }}</button>
+      <button type="button" class="dialog-close" aria-label="Fermer" @click="postOpen = false">×</button><p class="eyebrow">LE VESTIAIRE</p><h2 id="postTitle">Raconte-nous tout</h2>
+      <label for="postText">Message</label><textarea id="postText" v-model="postText" rows="5" placeholder="Un exploit, une excuse créative…"></textarea><button type="button" class="confirm-button" :disabled="saving" @click="publishPost">{{ saving ? "Publication…" : "Publier" }}</button>
     </div>
   </div>
 
-  <div v-if="challengeOpen" class="modal-backdrop" @click.self="challengeOpen = false">
+  <div v-if="challengeOpen" class="modal-backdrop" @click.self="challengeOpen = false" role="dialog" aria-modal="true" aria-labelledby="challengeModalTitle" ref="challengeModalRef">
     <div class="dialog-card challenge-builder">
-      <button type="button" class="dialog-close" @click="challengeOpen = false">×</button>
-      <p class="eyebrow">NOUVEAU CHALLENGE</p><h2>On remet ça ?</h2>
-      <label>Nom du challenge</label><input v-model="challengeTitle" placeholder="5 km par semaine" maxlength="80">
-      <label>Description</label><textarea v-model="challengeDescription" rows="2" placeholder="Le défi qui va faire parler la machine à café…"></textarea>
+      <button type="button" class="dialog-close" aria-label="Fermer" @click="challengeOpen = false">×</button>
+      <p class="eyebrow">NOUVEAU CHALLENGE</p><h2 id="challengeModalTitle">On remet ça ?</h2>
+      <label for="modalChallengeTitle">Nom du challenge</label><input id="modalChallengeTitle" v-model="challengeTitle" placeholder="5 km par semaine" maxlength="80">
+      <label for="modalChallengeDescription">Description</label><textarea id="modalChallengeDescription" v-model="challengeDescription" rows="2" placeholder="Le défi qui va faire parler la machine à café…"></textarea>
       <label>Évolution de l’objectif</label>
-      <div class="progression-toggle"><button :class="{ active: challengeTargetMode === 'fixed' }" @click="challengeTargetMode = 'fixed'">Fixe</button><button :class="{ active: challengeTargetMode === 'linear' }" @click="challengeTargetMode = 'linear'">Progressif</button></div>
-      <div class="form-grid"><div><label>{{ challengeTargetMode === "linear" ? "Jour 1" : "Objectif quotidien" }}</label><input v-model.number="challengeTarget" type="number" min="1"></div><div v-if="challengeTargetMode === 'linear'"><label>+ chaque jour</label><input v-model.number="challengeIncrement" type="number" min="0"></div><div><label>Durée</label><select v-model.number="challengeDuration"><option :value="7">7 jours</option><option :value="14">14 jours</option><option :value="30">30 jours</option><option :value="60">60 jours</option></select></div></div>
+      <div class="progression-toggle" role="group" aria-label="Type d’objectif"><button :class="{ active: challengeTargetMode === 'fixed' }" @click="challengeTargetMode = 'fixed'" :aria-pressed="challengeTargetMode === 'fixed'">Fixe</button><button :class="{ active: challengeTargetMode === 'linear' }" @click="challengeTargetMode = 'linear'" :aria-pressed="challengeTargetMode === 'linear'">Progressif</button></div>
+      <div class="form-grid"><div><label for="modalChallengeTarget">{{ challengeTargetMode === "linear" ? "Jour 1" : "Objectif quotidien" }}</label><input id="modalChallengeTarget" v-model.number="challengeTarget" type="number" min="1"></div><div v-if="challengeTargetMode === 'linear'"><label for="modalChallengeIncrement">+ chaque jour</label><input id="modalChallengeIncrement" v-model.number="challengeIncrement" type="number" min="0"></div><div><label for="modalChallengeDuration">Durée</label><select id="modalChallengeDuration" v-model.number="challengeDuration"><option :value="7">7 jours</option><option :value="14">14 jours</option><option :value="30">30 jours</option><option :value="60">60 jours</option></select></div></div>
       <p v-if="challengeTargetMode === 'linear'" class="progression-preview">10, 15, 20… l’objectif évolue automatiquement chaque jour.</p>
-      <label>Récompense</label><input v-model="challengeReward" placeholder="Un déjeuner d’équipe">
+      <label for="modalChallengeReward">Récompense</label><input id="modalChallengeReward" v-model="challengeReward" placeholder="Un déjeuner d’équipe">
       <button type="button" class="text-button" @click="challengeOpen = false">Annuler</button>
       <button type="button" class="confirm-button" :disabled="saving" @click="createChallenge">{{ saving ? "Lancement…" : "Lancer ce challenge" }}</button>
     </div>
   </div>
 
-  <div v-if="joinTeamOpen" class="modal-backdrop" @click.self="joinTeamOpen = false">
+  <div v-if="joinTeamOpen" class="modal-backdrop" @click.self="joinTeamOpen = false" role="dialog" aria-modal="true" aria-labelledby="joinTeamTitle" ref="joinTeamModalRef">
     <div class="dialog-card onboarding-card">
-      <button type="button" class="dialog-close" @click="joinTeamOpen = false">×</button>
+      <button type="button" class="dialog-close" aria-label="Fermer" @click="joinTeamOpen = false">×</button>
       <p class="eyebrow">REJOINDRE UNE ÉQUIPE</p>
-      <h2>Change de bande</h2>
+      <h2 id="joinTeamTitle">Change de bande</h2>
       <p>Saisis le code d’invitation de l’autre équipe pour voir son défi.</p>
-      <label>Ton prénom</label>
-      <input v-model="joinTeamName" placeholder="Camille" maxlength="40">
-      <label>Code d’invitation</label>
-      <input v-model="joinTeamCode" class="code-input" placeholder="MOLLETS" maxlength="8">
+      <label for="joinTeamName">Ton prénom</label>
+      <input id="joinTeamName" v-model="joinTeamName" placeholder="Camille" maxlength="40">
+      <label for="joinTeamCode">Code d’invitation</label>
+      <input id="joinTeamCode" v-model="joinTeamCode" class="code-input" placeholder="MOLLETS" maxlength="8">
       <p class="reconnect-hint">Déjà membre ? Remets exactement le même pseudo : tu retrouveras ton profil et ton historique.</p>
       <button type="button" class="text-button" @click="joinTeamOpen = false">Annuler</button>
       <button type="button" class="confirm-button" :disabled="saving" @click="confirmJoinTeam">{{ saving ? "Connexion…" : "Rejoindre" }}</button>
     </div>
   </div>
 
-  <div v-if="activeBonus" class="bonus-backdrop">
-    <div class="bonus-burst">BAM!</div>
+  <div v-if="activeBonus" class="bonus-backdrop" role="dialog" aria-modal="true" aria-labelledby="bonusTitle" ref="bonusModalRef">
+    <div class="bonus-burst" aria-hidden="true">BAM!</div>
     <div class="bonus-card" :class="activeBonus.mode">
-      <span class="bonus-emoji">{{ activeBonus.emoji }}</span>
+      <span class="bonus-emoji" aria-hidden="true">{{ activeBonus.emoji }}</span>
       <p class="eyebrow">{{ activeBonus.mode === "owned" ? "CARTE BONUS GAGNÉE" : "CARTE REÇUE" }}</p>
-      <h2>{{ activeBonus.title }}</h2>
+      <h2 id="bonusTitle">{{ activeBonus.title }}</h2>
       <p>{{ activeBonus.mode === "received" ? `${activeBonus.senderName} vient de te jouer cette carte. ` : "" }}{{ activeBonus.description }}</p>
 
       <template v-if="activeBonus.mode === 'owned'">
         <div v-if="bonusTargetOpen" class="bonus-targets">
           <p>À qui réserves-tu ce petit plaisir ?</p>
           <button v-for="member in state.members.filter(item => item.id !== state.currentUserId)" :key="member.id" @click="assignBonus(member.id)">
-            <span class="mini-avatar" :class="member.color">{{ member.initials }}</span>{{ member.name }}
+            <span class="mini-avatar" :class="member.color" aria-hidden="true">{{ member.initials }}</span>{{ member.name }}
           </button>
         </div>
         <div v-else class="bonus-actions">
