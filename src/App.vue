@@ -29,6 +29,9 @@ const challengeReward = ref("");
 const challengeRewardAt = ref(80);
 const checkinChallengeId = ref(null);
 const bonusTargetOpen = ref(false);
+const joinTeamOpen = ref(false);
+const joinTeamCode = ref("");
+const joinTeamName = ref("");
 const updateReady = ref(false);
 const reactionOptions = ["🔥", "👏", "😂", "💪", "❤️", "😮"];
 let unsubscribe = () => {};
@@ -143,6 +146,42 @@ function selectChallenge(challenge) {
     checkedIn: checkedIds.includes(member.id)
   }));
   activeView.value = "home";
+}
+
+async function confirmDelete(challenge) {
+  if (!confirm(`Supprimer "${challenge.title}" ? Les checkins seront perdus, les membres restent.`)) return;
+  saving.value = true;
+  try {
+    state.value = await pacte.deleteChallenge(challenge.id);
+    notify("Challenge supprimé.");
+  } catch (err) {
+    notify(err.message);
+  } finally {
+    saving.value = false;
+  }
+}
+
+function openJoinTeam() {
+  joinTeamCode.value = "";
+  joinTeamName.value = currentMember.value?.name || "";
+  joinTeamOpen.value = true;
+}
+
+async function confirmJoinTeam() {
+  if (!joinTeamCode.value.trim()) return notify("Il manque le code d’invitation.");
+  if (!joinTeamName.value.trim()) return notify("Dis-nous comment t’appeler.");
+  saving.value = true;
+  try {
+    state.value = await pacte.joinTeam(joinTeamCode.value.trim(), joinTeamName.value.trim());
+    joinTeamOpen.value = false;
+    notify("Tu as rejoint la nouvelle équipe !");
+    unsubscribe();
+    unsubscribe = pacte.subscribe(() => refresh());
+  } catch (err) {
+    notify(err.message);
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function publishPost() {
@@ -413,7 +452,7 @@ onUnmounted(() => unsubscribe());
     </template>
 
     <section v-else-if="activeView === 'challenges'" class="page-view">
-      <div class="page-title"><div><p class="eyebrow">LES DÉFIS</p><h1>À nous de jouer</h1></div><button class="round-add" @click="challengeOpen = true">＋</button></div>
+      <div class="page-title"><div><p class="eyebrow">LES DÉFIS</p><h1>À nous de jouer</h1></div><div class="page-actions"><button class="text-button" @click="openJoinTeam">Rejoindre</button><button class="round-add" @click="challengeOpen = true">＋</button></div></div>
       <p class="page-intro">{{ state.challenges?.length || 1 }} challenge{{ (state.challenges?.length || 1) > 1 ? "s" : "" }} en cours — choisis ton terrain de jeu.</p>
       <article v-for="challenge in state.challenges || [state.challenge]" :key="challenge.id" class="detail-card active-challenge challenge-list-item">
         <div class="card-status"><span class="live-pill"><i></i> EN COURS</span><strong>{{ challenge.progress }}%</strong></div>
@@ -425,6 +464,7 @@ onUnmounted(() => unsubscribe());
           <div><strong>{{ challenge.durationDays || 30 }}</strong><span>jours</span></div>
           <div><strong>{{ challenge.doneCount }}/{{ state.members.length }}</strong><span>aujourd’hui</span></div>
         </div>
+        <button class="text-button" style="color:var(--coral);margin:4px 0 10px" @click="confirmDelete(challenge)">Supprimer ce challenge</button>
         <div class="challenge-card-actions"><button class="secondary-button" @click="selectChallenge(challenge)">Voir</button><button class="confirm-button" @click="openCheckin(challenge)">{{ challenge.checkedIn ? "Validé ✓" : "Valider" }}</button></div>
       </article>
       <button class="outline-action" @click="challengeOpen = true">⚡ Lancer un nouveau challenge</button>
@@ -501,6 +541,22 @@ onUnmounted(() => unsubscribe());
       <label>Récompense</label><input v-model="challengeReward" placeholder="Un déjeuner d’équipe">
       <button type="button" class="text-button" @click="challengeOpen = false">Annuler</button>
       <button type="button" class="confirm-button" :disabled="saving" @click="createChallenge">{{ saving ? "Lancement…" : "Lancer ce challenge" }}</button>
+    </div>
+  </div>
+
+  <div v-if="joinTeamOpen" class="modal-backdrop" @click.self="joinTeamOpen = false">
+    <div class="dialog-card onboarding-card">
+      <button type="button" class="dialog-close" @click="joinTeamOpen = false">×</button>
+      <p class="eyebrow">REJOINDRE UNE ÉQUIPE</p>
+      <h2>Change de bande</h2>
+      <p>Saisis le code d’invitation de l’autre équipe pour voir son défi.</p>
+      <label>Ton prénom</label>
+      <input v-model="joinTeamName" placeholder="Camille" maxlength="40">
+      <label>Code d’invitation</label>
+      <input v-model="joinTeamCode" class="code-input" placeholder="MOLLETS" maxlength="8">
+      <p class="reconnect-hint">Déjà membre ? Remets exactement le même pseudo : tu retrouveras ton profil et ton historique.</p>
+      <button type="button" class="text-button" @click="joinTeamOpen = false">Annuler</button>
+      <button type="button" class="confirm-button" :disabled="saving" @click="confirmJoinTeam">{{ saving ? "Connexion…" : "Rejoindre" }}</button>
     </div>
   </div>
 

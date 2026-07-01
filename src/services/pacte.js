@@ -187,6 +187,24 @@ export const pacte = {
     return this.load();
   },
 
+  async deleteChallenge(challengeId) {
+    if (!supabaseConfigured) {
+      const data = readDemo();
+      data.challenges = (data.challenges || [data.challenge]).filter(challenge => challenge.id !== challengeId);
+      data.challenge = data.challenges[0] || null;
+      if (!data.challenge) {
+        data.challengeOnboarding = true;
+        data.progress = 0;
+      } else {
+        data.challengeOnboarding = false;
+        data.progress = data.challenge.progress || 0;
+      }
+      return saveDemo(data);
+    }
+    await rpc("delete_challenge", { p_challenge_id: challengeId });
+    return this.load();
+  },
+
   async joinTeam(inviteCode, memberName) {
     if (!supabaseConfigured) return this.createTeam("Ma nouvelle bande", memberName);
     await rpc("join_team", { p_invite_code: inviteCode.toUpperCase(), p_member_name: memberName });
